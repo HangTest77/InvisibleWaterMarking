@@ -138,6 +138,10 @@
     <ClCompile Include="Extraction.cpp" />
     <ClCompile Include="Watermark.cpp" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="EmbedWatermark.cu" />
+    <None Include="EmbedWatermark.cuh" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>

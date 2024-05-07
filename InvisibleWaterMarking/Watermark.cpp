@@ -2,6 +2,7 @@
 #include "omp.h"
 #include <chrono>
 #include <mpi.h>
+#include "./EmbedWatermark.cuh" 
 
 
 using namespace cv;
@@ -70,18 +71,16 @@ void openMP_Split(const cv::Mat& src, std::vector<cv::Mat>& channels) {
 // OpenMP 2 - Merge
 
 cv::Mat openMP_Merge(const std::vector<cv::Mat>& channels, cv::Mat& output) {
-    // Ensure input channels are of the same size
     CV_Assert(channels.size() == 3);
 
-    // Create output image
-    output.create(channels[0].size(), CV_32FC3); // Output image will be in float format
+    output.create(channels[0].size(), CV_32FC3); 
 
 #pragma omp parallel for
     for (int y = 0; y < output.rows; ++y) {
         for (int x = 0; x < output.cols; ++x) {
-            cv::Vec3f& pixel = output.at<cv::Vec3f>(y, x); // Use Vec3f for floating-point values
+            cv::Vec3f& pixel = output.at<cv::Vec3f>(y, x); 
             for (int c = 0; c < 3; ++c) {
-                pixel[c] = channels[c].at<float>(y, x); // Directly copy pixel values
+                pixel[c] = channels[c].at<float>(y, x); 
             }
         }
     }
@@ -149,8 +148,6 @@ cv::Mat MPIMerge(const std::vector<cv::Mat>& channels) {
         }
     }
 
-    // Debug print statements
-    std::cout << "Rank " << rank << ": After merging channels" << std::endl;
 
     // Prepare buffers for MPI_Gatherv
     std::vector<float> sendBuffer(output.rows * output.cols * 3);
@@ -175,8 +172,6 @@ cv::Mat MPIMerge(const std::vector<cv::Mat>& channels) {
     MPI_Gatherv(sendBuffer.data(), output.rows * output.cols * 3, MPI_FLOAT,
         gatheredOutput.data, recvcounts.data(), displs.data(), MPI_FLOAT, 0, MPI_COMM_WORLD);
 
-    // Debug print statements
-    std::cout << "Rank " << rank << ": After MPI_Gatherv" << std::endl;
 
     if (rank == 0) {
         return gatheredOutput;
@@ -288,44 +283,32 @@ Mat embedWatermark(const Mat& image, const Mat& watermark, const Point& position
 Mat OpenMP_Watermark(const Mat& image, const Mat& watermark, const Point& position, float alpha) {
     Mat watermarkedImage = image.clone();
 
-    // Convert image and watermark to float32
     Mat imageFloat;
     image.convertTo(imageFloat, CV_32F);
     Mat watermarkFloat;
     watermark.convertTo(watermarkFloat, CV_32F);
 
-
-    // ***************************************************
-    // Duration for Split 
     auto startSplitOpenMP = chrono::high_resolution_clock::now();
 
-    // Split image channels
     vector<Mat> imageChannels;
     openMP_Split(imageFloat, imageChannels);
 
-    // Split watermark channels 
     vector<Mat> watermarkChannels;
     openMP_Split(watermarkFloat, watermarkChannels);
 
     auto stopSplitOpenMP = chrono::high_resolution_clock::now();
     auto durationSplitOpenMP = chrono::duration_cast<chrono::milliseconds>(stopSplitOpenMP - startSplitOpenMP);
 
-
-    // Embed watermark into image channels using element-wise operations
 #pragma omp parallel for
     for (int i = 0; i < 3; ++i) {
-        // Normalize watermark channel values to [-1, 1] range
         Mat normalizedWatermark = watermarkChannels[i] / 255.0f;
-        normalizedWatermark -= 0.5f;  // Shift to center around 0
+        normalizedWatermark -= 0.5f; 
 
-        // Apply weighted addition with image channel
         imageChannels[i] = imageChannels[i] + alpha * normalizedWatermark;
 
-        // Clip pixel values to [0, 1] after modification
         float minVal, maxVal;
         Point minLoc, maxLoc;
 
-        // Find minimum and maximum values manually
         for (int y = 0; y < imageChannels[i].rows; ++y) {
             for (int x = 0; x < imageChannels[i].cols; ++x) {
                 float value = imageChannels[i].at<float>(y, x);
@@ -346,7 +329,6 @@ Mat OpenMP_Watermark(const Mat& image, const Mat& watermark, const Point& positi
             }
         }
 
-        // Clip pixel values based on the minimum and maximum
         for (int y = 0; y < imageChannels[i].rows; ++y) {
             for (int x = 0; x < imageChannels[i].cols; ++x) {
                 imageChannels[i].at<float>(y, x) = min(max(imageChannels[i].at<float>(y, x), minVal), maxVal);
@@ -354,19 +336,13 @@ Mat OpenMP_Watermark(const Mat& image, const Mat& watermark, const Point& positi
         }
     }
 
-
-    // ***************************************************
-    // Duration for Merge 
     auto startMergeOpenMP = chrono::high_resolution_clock::now();
 
-    // Merge modified channels back into a single image
     openMP_Merge(imageChannels, watermarkedImage);
 
     auto stopMergeOpenMP = chrono::high_resolution_clock::now();
     auto durationMergeOpenMP = chrono::duration_cast<chrono::milliseconds>(stopMergeOpenMP - startMergeOpenMP);
 
-
-    // Convert back to original data type (8U)
     watermarkedImage.convertTo(watermarkedImage, CV_8U);
 
     cout << " " << endl;
@@ -434,18 +410,17 @@ Mat MPI_Watermark(const Mat& image, const Mat& watermark, const Point& position,
     // Convert back to original data type (8U)
     mergedImage.convertTo(mergedImage, CV_8U);
 
-    return mergedImage;
-
     cout << " " << endl;
     cout << " " << endl;
     cout << "MPI Split execution time: " << durationSplitMPI.count() << " milliseconds" << endl;
     cout << "MPI Merge execution time: " << durationMergeMPI.count() << " milliseconds" << endl;
     cout << " " << endl;
     cout << " " << endl;
+
+    return mergedImage;
 }
 
 
-// Function to rotate image
 Mat rotateImage(const Mat& image, double angle) {
     Mat rotatedImage;
     Point2f center(image.cols / 2.0, image.rows / 2.0);
@@ -461,16 +436,13 @@ Mat rotateImage(const Mat& image, double angle) {
 
 //    2 - Create Watermark
 
-// Function to create watermark with text
 Mat original_TextWatermark(const Size& size, const string& text) {
     Mat watermarkImage(size, CV_8UC3, Scalar(0, 0, 0, 0));
 
-    // Define the step size for positioning the text watermark
-    int stepX = 250; // Adjust this value as needed
-    int stepY = 200; // Adjust this value as needed
+    int stepX = 250; 
+    int stepY = 200; 
 
     auto start = chrono::high_resolution_clock::now();
-    // Loop to place the text watermark at multiple positions
     for (int y = 30; y < size.height; y += stepY) {
         for (int x = 10; x < size.width; x += stepX) {
             putText(watermarkImage, text, Point(x, y), FONT_HERSHEY_SIMPLEX, 2 , Scalar(0, 0, 255, 255), 2);
@@ -489,13 +461,11 @@ Mat original_TextWatermark(const Size& size, const string& text) {
 }
 
 
-// OpenMP to create watermark with text
 Mat OpenMP_TextWatermark(const Size& size, const string& text) {
     Mat watermarkImage(size, CV_8UC3, Scalar(0, 0, 0, 0));
 
-    // Define the step size for positioning the text watermark
-    int stepX = 250; // Adjust this value as needed
-    int stepY = 200; // Adjust this value as needed
+    int stepX = 250; 
+    int stepY = 200; 
  
     auto start = chrono::high_resolution_clock::now();
 #pragma omp parallel for collapse(2)
@@ -743,6 +713,49 @@ void goMPI(Mat originalImage, Mat watermarkImage, Mat rotatedWatermark) {
 }
 
 
+void goCUDA(Mat originalImage, Mat watermarkImage, Mat rotatedWatermark) {
+    // CUDA Watermarking
+    auto start = chrono::high_resolution_clock::now();
+    Mat invisibleWatermarkedImage = CUDA_Watermark(originalImage, rotatedWatermark, Point(10, 10), 10.01);
+    Mat watermarkedImage = CUDA_Watermark(originalImage, rotatedWatermark, Point(10, 10), 200.01);
+    auto end = chrono::high_resolution_clock::now();
+
+    auto duration = chrono::duration_cast<chrono::milliseconds>(end - start).count();
+
+    // Save watermarked image
+    imwrite("C:/Users/naikjunxiong/OneDrive - student.newinti.edu.my/Desktop/imageVisible.png", watermarkedImage);
+    imwrite("C:/Users/naikjunxiong/OneDrive - student.newinti.edu.my/Desktop/imageInvisible.png", invisibleWatermarkedImage);
+
+
+    const int maxWidth = 800; // Adjust as needed
+    const int maxHeight = 600; // Adjust as needed
+
+
+    cv::Size imageSize = watermarkedImage.size();
+    if (imageSize.width > maxWidth || imageSize.height > maxHeight) {
+        double scale = std::min((double)maxWidth / imageSize.width, (double)maxHeight / imageSize.height);
+        cv::resize(watermarkedImage, watermarkedImage, cv::Size(), scale, scale);
+        cv::resize(invisibleWatermarkedImage, invisibleWatermarkedImage, cv::Size(), scale, scale);
+    }
+
+    // Display watermarked image
+    imshow("Image with Visible Watermark", watermarkedImage);
+    imshow("Image with Invisible Watermark", invisibleWatermarkedImage);
+
+    cout << " " << endl;
+    cout << " " << endl;
+    cout << "Execution time for CUDA watermark embedding: " << duration << " milliseconds" << endl;
+    cout << " " << endl;
+    cout << " " << endl;
+    cout << "Prese any key to continue..." << endl;
+
+    waitKey(0);
+
+    destroyAllWindows();
+}
+
+
+
 
 // ************************************************************************************
 // Invisible
@@ -872,6 +885,45 @@ void goMPIInvisible(Mat originalImage, Mat watermarkImage, Mat rotatedWatermark)
     destroyAllWindows();
 
 }
+
+
+void goCUDAInvisible(Mat originalImage, Mat watermarkImage, Mat rotatedWatermark) {
+    // CUDA Watermarking
+    auto start = chrono::high_resolution_clock::now();
+    Mat invisibleWatermarkedImage = CUDA_Watermark(originalImage, rotatedWatermark, Point(10, 10), 10.01);
+    auto end = chrono::high_resolution_clock::now();
+
+    auto duration = chrono::duration_cast<chrono::milliseconds>(end - start).count();
+
+    // Save watermarked image
+    imwrite("C:/Users/naikjunxiong/OneDrive - student.newinti.edu.my/Desktop/imageInvisible.png", invisibleWatermarkedImage);
+
+
+    const int maxWidth = 800; // Adjust as needed
+    const int maxHeight = 600; // Adjust as needed
+
+
+    cv::Size imageSize = invisibleWatermarkedImage.size();
+    if (imageSize.width > maxWidth || imageSize.height > maxHeight) {
+        double scale = std::min((double)maxWidth / imageSize.width, (double)maxHeight / imageSize.height);
+        cv::resize(invisibleWatermarkedImage, invisibleWatermarkedImage, cv::Size(), scale, scale);
+    }
+
+    // Display watermarked image
+    imshow("Image with Invisible Watermark", invisibleWatermarkedImage);
+
+    cout << " " << endl;
+    cout << " " << endl;
+    cout << "Execution time for CUDA watermark embedding: " << duration << " milliseconds" << endl;
+    cout << " " << endl;
+    cout << " " << endl;
+    cout << "Prese any key to continue..." << endl;
+
+    waitKey(0);
+
+    destroyAllWindows();
+}
+
 
 
 
@@ -1005,6 +1057,44 @@ void goMPIVisible(Mat originalImage, Mat watermarkImage, Mat rotatedWatermark) {
 }
 
 
+void goCUDAVisible(Mat originalImage, Mat watermarkImage, Mat rotatedWatermark) {
+    // CUDA Watermarking
+    auto start = chrono::high_resolution_clock::now();
+    Mat watermarkedImage = CUDA_Watermark(originalImage, rotatedWatermark, Point(10, 10), 200.01);
+    auto end = chrono::high_resolution_clock::now();
+
+    auto duration = chrono::duration_cast<chrono::milliseconds>(end - start).count();
+
+    // Save watermarked image
+    imwrite("C:/Users/naikjunxiong/OneDrive - student.newinti.edu.my/Desktop/imageVisible.png", watermarkedImage);
+
+
+    const int maxWidth = 800; // Adjust as needed
+    const int maxHeight = 600; // Adjust as needed
+
+
+    cv::Size imageSize = watermarkedImage.size();
+    if (imageSize.width > maxWidth || imageSize.height > maxHeight) {
+        double scale = std::min((double)maxWidth / imageSize.width, (double)maxHeight / imageSize.height);
+        cv::resize(watermarkedImage, watermarkedImage, cv::Size(), scale, scale);
+    }
+
+    // Display watermarked image
+    imshow("Image with Visible Watermark", watermarkedImage);
+
+    cout << " " << endl;
+    cout << " " << endl;
+    cout << "Execution time for CUDA watermark embedding: " << duration << " milliseconds" << endl;
+    cout << " " << endl;
+    cout << " " << endl;
+    cout << "Prese any key to continue..." << endl;
+
+    waitKey(0);
+
+    destroyAllWindows();
+}
+
+
 
 // ************************************************************************************
 // Console
@@ -1022,6 +1112,9 @@ void toUserSelection(Mat originalImage, Mat watermarkImage, Mat rotatedWatermark
         else if (option == 3)
             goMPI(originalImage, watermarkImage, rotatedWatermark);
 
+        else if (option == 4)
+            goCUDA(originalImage, watermarkImage, rotatedWatermark);
+
 }
 
 void toUserInvisible(Mat originalImage, Mat watermarkImage, Mat rotatedWatermark, int option) {
@@ -1036,6 +1129,9 @@ void toUserInvisible(Mat originalImage, Mat watermarkImage, Mat rotatedWatermark
     else if (option == 3)
         goMPIInvisible(originalImage, watermarkImage, rotatedWatermark);
 
+    else if (option == 4)
+        goCUDAInvisible(originalImage, watermarkImage, rotatedWatermark);
+
 }
 
 void toUserVisible(Mat originalImage, Mat watermarkImage, Mat rotatedWatermark, int option) {
@@ -1049,6 +1145,9 @@ void toUserVisible(Mat originalImage, Mat watermarkImage, Mat rotatedWatermark, 
 
     else if (option == 3)
         goMPIVisible(originalImage, watermarkImage, rotatedWatermark);
+
+    else if (option == 4)
+        goCUDAVisible(originalImage, watermarkImage, rotatedWatermark);
 
 }
 
@@ -1073,6 +1172,7 @@ void continueWatermarking(Mat originalImage) {
     cout << "Press 1 - Original Watermarking Technique " << endl;
     cout << "Press 2 - OpenMP Watermarking Technique " << endl;
     cout << "Press 3 - MPI Watermarking Technique " << endl;
+    cout << "Press 4 - CUDA Watermarking Technique " << endl;
 
     cout << "Option: ";
     cin >> options;
@@ -1098,6 +1198,13 @@ void continueWatermarking(Mat originalImage) {
 
         toUserSelection(originalImage, watermarkImage, rotatedWatermark, 3);
     }
+    else if (options == 4) {
+        Mat watermarkImage = original_TextWatermark(originalImage.size(), watermarkTexts);
+
+        Mat rotatedWatermark = rotateImage(watermarkImage, 0.0);
+
+        toUserSelection(originalImage, watermarkImage, rotatedWatermark, options);
+    }
 
     
 
@@ -1120,6 +1227,7 @@ void invisibleWatermarking(Mat originalImage) {
     cout << "Press 1 - Original Watermarking Technique " << endl;
     cout << "Press 2 - OpenMP Watermarking Technique " << endl;
     cout << "Press 3 - MPI Watermarking Technique " << endl;
+    cout << "Press 4 - CUDA Watermarking Technique " << endl;
 
     cout << "Option: ";
     cin >> options;
@@ -1145,6 +1253,13 @@ void invisibleWatermarking(Mat originalImage) {
 
         toUserInvisible(originalImage, watermarkImage, rotatedWatermark, 3);
     }
+    else if (options == 4) {
+        Mat watermarkImage = original_TextWatermark(originalImage.size(), watermarkTexts);
+
+        Mat rotatedWatermark = rotateImage(watermarkImage, 0.0);
+
+        toUserInvisible(originalImage, watermarkImage, rotatedWatermark, options);
+    }
 
 
 
@@ -1167,6 +1282,7 @@ void visibleWatermarking(Mat originalImage) {
     cout << "Press 1 - Original Watermarking Technique " << endl;
     cout << "Press 2 - OpenMP Watermarking Technique " << endl;
     cout << "Press 3 - MPI Watermarking Technique " << endl;
+    cout << "Press 4 - CUDA Watermarking Technique " << endl;
 
     cout << "Option: ";
     cin >> options;
@@ -1191,6 +1307,13 @@ void visibleWatermarking(Mat originalImage) {
         Mat rotatedWatermark = rotateImage(watermarkImage, 0.0);
 
         toUserVisible(originalImage, watermarkImage, rotatedWatermark, 3);
+    }
+    else if (options == 4) {
+        Mat watermarkImage = original_TextWatermark(originalImage.size(), watermarkTexts);
+
+        Mat rotatedWatermark = rotateImage(watermarkImage, 0.0);
+
+        toUserInvisible(originalImage, watermarkImage, rotatedWatermark, options);
     }
 
 
